@@ -191,6 +191,14 @@ canvas.scope{width:100%;height:110px;background:#1d1236;border-radius:14px;displ
 .mblock{background:var(--c,var(--blue));color:#fff;border:2px solid rgba(0,0,0,.2);border-radius:8px;font-weight:800;font-size:.78rem;min-width:0;overflow:hidden;text-align:left;padding:0 7px;z-index:1}
 .mblock.sel{outline:3px solid var(--sun);outline-offset:1px;z-index:2}
 .kb.hidesharp .blk .kl{display:none}
+.voices{display:flex;flex-direction:column;gap:6px;margin-top:8px}
+.vwrap{display:flex;gap:6px;align-items:stretch}
+.voicechip{flex:1;display:flex;align-items:center;gap:8px;text-align:left;border:2px solid var(--line);border-left:8px solid var(--c);background:#fff;border-radius:14px;padding:8px 10px;font-weight:800;color:var(--navy)}
+.voicechip small{margin-left:auto;font-weight:700;color:var(--muted)}
+.voicechip.on{background:var(--c);color:#fff;border-color:var(--c)}.voicechip.on small{color:#fff;opacity:.85}
+.voicechip.muted{opacity:.55}
+.vmute{border:2px solid var(--line);background:#fff;border-radius:14px;min-width:46px;font-size:1.1rem}
+.voicechip .vd{display:none}
 .lenchip{flex-direction:column;gap:0;padding:4px 10px;line-height:1.1}
 .editbar{border-color:var(--sun)!important;background:#fffaf0}
 .staffsvg .blab.now{fill:#b35a00}
