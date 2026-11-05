@@ -180,6 +180,20 @@ input[type=range]{width:100%;accent-color:var(--blue);height:36px}
 canvas.scope{width:100%;height:110px;background:#1d1236;border-radius:14px;display:block}
 
 /* ---------- shelf & composers ---------- */
+.mgrid{display:grid;gap:2px;align-items:stretch;margin-right:2.4%}
+.mhead{font-size:.7rem;font-weight:800;color:var(--muted);text-align:center}
+.mlab{font-size:.72rem;font-weight:800;color:var(--navy);display:flex;align-items:center;justify-content:flex-end;padding-right:5px}
+.mlab.c{color:var(--blue)}
+.mcell{border:1px solid #e6e0f0;background:#faf7ff;border-radius:5px;min-width:0;padding:0}
+.mcell.beat{background:#f1ecfb}
+.mcell.cur{outline:3px solid var(--blue);outline-offset:-2px}
+.mcell.now,.mhead.now{background:#ffe3a3}
+.mblock{background:var(--c,var(--blue));color:#fff;border:2px solid rgba(0,0,0,.2);border-radius:8px;font-weight:800;font-size:.78rem;min-width:0;overflow:hidden;text-align:left;padding:0 7px;z-index:1}
+.mblock.sel{outline:3px solid var(--sun);outline-offset:1px;z-index:2}
+.kb.hidesharp .blk .kl{display:none}
+.lenchip{flex-direction:column;gap:0;padding:4px 10px;line-height:1.1}
+.editbar{border-color:var(--sun)!important;background:#fffaf0}
+.staffsvg .blab.now{fill:#b35a00}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .gamecard{display:flex;flex-direction:column;align-items:flex-start;gap:4px;background:#fff;border:2px solid var(--line);border-top:6px solid var(--c,var(--blue));border-radius:18px;padding:12px;text-align:left;color:var(--ink)}
 .gamecard .em{font-size:2rem}.gamecard b{color:var(--navy);line-height:1.15}.gamecard .small{color:var(--muted)}
@@ -272,6 +286,8 @@ details.sess .in{padding:0 14px 12px}
 <script src="mu-labs-a.js"></script>
 <script src="mu-labs-b.js"></script>
 <script src="mu-labs-c.js"></script>
+<script src="mu-studio.js"></script>
+<script src="mu-intervals.js"></script>
 <script src="mu-games.js"></script>
 <script src="mu-shelf.js"></script>
 <script src="mu-parent.js"></script>

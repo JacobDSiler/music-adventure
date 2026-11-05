@@ -41,7 +41,7 @@
       bigQuestion: 'Why do some notes sound high and others low?',
       story: 'Pitch is how high or low a note sounds. Fast vibrations make high sounds, slow vibrations make low sounds. A melody is a line of pitches that moves up and down like a path, with steps, skips and leaps. Seven letters, A to G, name the notes, and then they start again.',
       answer: 'Pitch depends on how fast something vibrates. A melody is pitches in a row, moving by steps, skips and leaps, usually built on a scale.',
-      labs: ['keyboard', 'steps-leaps', 'scale-ladder', 'pentatonic'],
+      labs: ['keyboard', 'steps-leaps', 'scale-ladder', 'pentatonic', 'intervals'],
       listen: ['ode-joy', 'hymn-joy', 'twinkle-var', 'lark'],
       vocab: [V('pitch', 'how high or low a note sounds'), V('melody', 'a line of notes that make a tune'), V('scale', 'notes in order going up or down'), V('step', 'moving to the next note'), V('leap', 'a big jump between notes'), V('octave', 'the distance from one note to the next note with the same name'), V('pentatonic', 'a five-note scale that always sounds nice'), V('solfège', 'Do, Re, Mi, Fa, Sol, La, Ti: singing names for notes')],
       sessions: [

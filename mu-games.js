@@ -194,6 +194,7 @@
     const wrap = h('div', null);
     wrap.append(MU.topbar('🎮 Music Games', '/', MU.starPill()));
     wrap.append(h('p', { class: 'muted' }, 'Quick games to train your ears. Every game helps you earn stars.'));
+    wrap.append(h('button', { class: 'labcard', style: { marginBottom: '12px' }, onclick: () => MU.go('/studio') }, h('span', { class: 'em' }, '🎛️'), h('span', { style: { flex: 1 } }, h('b', null, 'Music Studio'), h('span', { class: 'd' }, 'Make your own beats, tunes and songs'))));
     const grid = h('div', { class: 'grid2' });
     MU.games.forEach(g => {
       const rec = (MU.PR().games || {})[g.id];

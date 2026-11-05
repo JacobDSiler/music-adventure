@@ -208,7 +208,8 @@
     const out = Object.assign({}, a);
     for (const pid of Object.keys(b || {})) {
       const x = out[pid] || emptyPR(), y = b[pid] || {};
-      const m = { labs: Object.assign({}, x.labs), quiz: Object.assign({}, x.quiz), missions: Object.assign({}, y.missions || {}, x.missions), badges: Object.assign({}, y.badges || {}, x.badges), games: Object.assign({}, x.games || {}), listened: Object.assign({}, y.listened || {}, x.listened || {}) };
+      const m = { labs: Object.assign({}, x.labs), quiz: Object.assign({}, x.quiz), missions: Object.assign({}, y.missions || {}, x.missions), badges: Object.assign({}, y.badges || {}, x.badges), games: Object.assign({}, x.games || {}), listened: Object.assign({}, y.listened || {}, x.listened || {}), songs: Object.assign({}, x.songs || {}) };
+      for (const k in (y.songs || {})) { const c = m.songs[k]; if (!c || (y.songs[k].ts || 0) > (c.ts || 0)) m.songs[k] = y.songs[k]; }
       for (const k in (y.games || {})) { const c = m.games[k]; if (!c || (y.games[k].stars || 0) > (c.stars || 0) || ((y.games[k].stars || 0) === (c.stars || 0) && (y.games[k].plays || 0) > (c.plays || 0))) m.games[k] = y.games[k]; }
       for (const k in (y.labs || {})) { const c = m.labs[k]; if (!c || (y.labs[k].stars || 0) > (c.stars || 0)) m.labs[k] = y.labs[k]; }
       for (const k in (y.quiz || {})) { const c = m.quiz[k]; if (!c || (y.quiz[k].pct || 0) > (c.pct || 0)) m.quiz[k] = y.quiz[k]; }
@@ -309,6 +310,7 @@
       else if (r === 'quiz') app.append(screenQuiz(parts[1]));
       else if (r === 'badges') { app.append(screenBadges()); nav = '/badges'; }
       else if (r === 'journal') { app.append(screenJournal(parts[1], qs)); nav = parts[1] ? null : '/journal'; }
+      else if (r === 'studio') { app.append(need('studio', 'Studio')); nav = '/studio'; }
       else if (r === 'games') { app.append(need('games', 'Games')); nav = '/games'; }
       else if (r === 'game') { app.append(need('game', 'Game')); }
       else if (r === 'shelf') { app.append(need('shelf', 'Listening shelf')); nav = '/shelf'; }
@@ -354,6 +356,7 @@
       wrap.append(h('div', { class: 'card' }, h('div', { class: 'center' }, h('div', { class: 'bigem' }, '🌱'), h('h2', null, 'Little Ones'), h('p', { class: 'muted mt8' }, 'Big buttons for little hands!'),
         h('button', { class: 'btn big mint mt12', onclick: () => MU.go('/little') }, 'Play 🎹'))));
     }
+    wrap.append(h('button', { class: 'arcade', style: { background: 'linear-gradient(135deg,#6B4FD8,#2B1B4D)' }, onclick: () => MU.go('/studio') }, h('span', { class: 'em' }, '🎛️'), h('span', { class: 'tx' }, h('b', null, 'Music Studio'), h('span', null, 'Make beats, tunes and whole songs'))));
     wrap.append(h('button', { class: 'arcade', onclick: () => MU.go('/games') }, h('span', { class: 'em' }, '🎮'), h('span', { class: 'tx' }, h('b', null, 'Music Games'), h('span', null, 'Echo rhythms, name notes, guess the instrument'))));
 
     wrap.append(h('div', { class: 'themes' }, [['sky', '☁️', 'Sky'], ['sea', '🌊', 'Sea'], ['shore', '🏖️', 'Shore'], ['nature', '🍃', 'Leaves'], ['animals', '🐾', 'Animals'], ['dance', '💃', 'Dance'], ['irish', '☘️', 'Irish']].map(([k, e, t]) =>
@@ -482,7 +485,7 @@
     const lab = MU.labs[id]; if (!lab) return h('p', null, 'Lab not found');
     const u = MU.unit(lab.unit);
     const wrap = h('div', { style: { '--c': u ? u.color : '#6B4FD8' } });
-    wrap.append(MU.topbar(lab.emoji + ' ' + lab.title, '/unit/' + lab.unit, MU.starsEl(MU.labStars(id))));
+    wrap.append(MU.topbar(lab.emoji + ' ' + lab.title, lab.unit ? '/unit/' + lab.unit : '/studio', MU.starsEl(MU.labStars(id))));
     const root = h('div', null); wrap.append(root);
     const ctx = {
       root, band: MU.band(), lvl: MU.lvl(), unit: u,
@@ -497,7 +500,7 @@
           prev && stars <= prev ? h('p', { class: 'small muted mt8' }, 'Your best is ' + prev + ' ⭐') : null,
           h('div', { class: 'wrapx mt16', style: { justifyContent: 'center' } },
             h('button', { class: 'btn ghost', onclick: () => { MU.closeModal(); render(); } }, '🔁 Again'),
-            h('button', { class: 'btn mint', onclick: () => { MU.closeModal(); MU.go('/unit/' + lab.unit); } }, 'Back to movement'))));
+            h('button', { class: 'btn mint', onclick: () => { MU.closeModal(); MU.go(lab.unit ? '/unit/' + lab.unit : '/studio'); } }, lab.unit ? 'Back to movement' : 'Back to studio'))));
       },
       sayPrompt(text) { return h('div', { class: 'prompt' }, text, ' ', MU.sayBtn(text)); }
     };

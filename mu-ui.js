@@ -178,7 +178,7 @@
         q.visual || null,
         q.play ? h('div', { class: 'center mt8' }, MU.hearBtn(q.hearLabel || 'Hear it', () => { MU.stopAll(); q.play(); })) : null,
         h('div', { class: 'choices' + (cfg.cols ? ' cols' + cfg.cols : '') }, btns), fbk, next);
-      if (q.play && cfg.autoplay !== false) MU.after(() => q.play(), 400);
+      if (q.play && cfg.autoplay !== false && q.autoplay !== false) MU.after(() => q.play(), 400);
     }
     show();
   };
