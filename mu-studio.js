@@ -44,11 +44,11 @@
   MU.songList = () => Object.values(songsObj()).filter(x => x && !x.del).sort((a, b) => b.ts - a.ts);
   MU.saveSong = (data, id) => { const o = songsObj(); id = id || 's' + Date.now().toString(36); o[id] = Object.assign({}, data, { id, ts: Date.now() }); MU.save(); return id; };
   MU.deleteSong = id => { const o = songsObj(); o[id] = { id, del: true, ts: Date.now() }; MU.save(); };
-  const pack = song => ({ v: 2, bars: song.bars, tempo: song.tempo, voices: song.voices.map(v => ({ inst: v.inst, mute: !!v.mute })), notes: song.notes.map(n => [n.s, n.n, n.len, n.v]),
+  const pack = song => ({ v: 2, bars: song.bars, tempo: song.tempo, dm: song.drumMute ? 1 : 0, voices: song.voices.map(v => ({ inst: v.inst, mute: !!v.mute })), notes: song.notes.map(n => [n.s, n.n, n.len, n.v]),
     drums: Object.fromEntries(Object.keys(song.drums).map(k => [k, song.drums[k].map(x => x ? 1 : 0)])) });
   function unpack(d) {
     const bars = Math.max(1, Math.min(MAXBARS, d.bars || 4)), T = bars * PER;
-    const song = { bars, tempo: d.tempo || 90, voices: newVoices(), notes: [], drums: { kick: [], snare: [], hat: [], tamb: [] } };
+    const song = { bars, drumMute: !!d.dm, tempo: d.tempo || 90, voices: newVoices(), notes: [], drums: { kick: [], snare: [], hat: [], tamb: [] } };
     if (d.voices) d.voices.forEach((v, i) => { if (song.voices[i]) { song.voices[i].inst = v.inst || song.voices[i].inst; song.voices[i].mute = !!v.mute; } });
     if (d.notes) d.notes.forEach(a => { if (a[0] < T) song.notes.push({ s: a[0], n: a[1], len: a[2], v: a[3] || 0 }); });
     else if (d.mel) { if (d.inst) song.voices[0].inst = d.inst; d.mel.forEach((e, i) => { if (e && i < T) { const p = String(e).split(':'); song.notes.push({ s: i, n: p[0], len: Number(p[1]) || 2, v: 0 }); } }); } // songs saved by the first Studio
@@ -63,7 +63,7 @@
   function playStep(song, i, secs, withDrums) {
     const sd = 60 / song.tempo / 2;
     song.notes.forEach(n => { if (n.s === i && !song.voices[n.v].mute) MU.note(n.n, Math.max(.12, n.len * sd * LENS_SEC), { when: secs, inst: song.voices[n.v].inst, vol: noteVol(song, n) }); });
-    if (withDrums) DRUMS.forEach(d => { if (song.drums[d.k][i]) MU.drum(d.k, { when: secs, vol: .6 }); });
+    if (withDrums && !song.drumMute) DRUMS.forEach(d => { if (song.drums[d.k][i]) MU.drum(d.k, { when: secs, vol: .6 }); });
   }
   MU.playSongData = function (data, onEnd) {
     const song = unpack(data);
@@ -106,6 +106,7 @@
     const lvl = ctx.lvl, keysMode = cfg.input === 'keys';
     const song = { bars: cfg.bars || 4, tempo: lvl === 1 ? 80 : 96, voices: newVoices(), notes: [], drums: { kick: [], snare: [], hat: [], tamb: [] } };
     let view = cfg.view || 'block', bar = 0, sel = null, cursor = 0, curLen = 2, sharpMode = false, showNames = lvl === 1, loop = true;
+    let keyReplace = false, loopA = 0, loopB = null, targets = new Set(), undoStack = [], scope = { d: true, v: [true, true, true, true] };
     let av = 0, win = 'high', stack = false, chordSel = null, seventh = false, clk = null, playPos = -1, savedId = null;
     const total = () => song.bars * PER;
     function fit() {
@@ -113,6 +114,11 @@
       Object.keys(song.drums).forEach(k => { song.drums[k].length = T; for (let i = 0; i < T; i++) if (song.drums[k][i] === undefined) song.drums[k][i] = false; });
     }
     fit();
+    const snap = () => { undoStack.push(JSON.stringify({ n: song.notes, d: song.drums, b: song.bars })); if (undoStack.length > 30) undoStack.shift(); };
+    function undo() {
+      const e = undoStack.pop(); if (!e) return MU.toast('Nothing to undo'); const o = JSON.parse(e);
+      song.notes = o.n; song.drums = o.d; song.bars = o.b; fit(); if (bar >= song.bars) bar = song.bars - 1; sel = null; render();
+    }
     const winLo = () => MU.stepOf(win === 'high' ? 'C4' : 'C3'), winHi = () => winLo() + 14;
 
     /* ----- model ----- */
@@ -136,27 +142,30 @@
       sel.s = ns; render();
     }
     function editVoice(v) { if (!sel) return; song.notes = song.notes.filter(x => x === sel || !(x.v === v && x.n === sel.n && x.s < sel.s + sel.len && x.s + x.len > sel.s)); sel.v = v; sound(sel.n, sel.len, v); render(); }
-    function editDelete() { if (!sel) return; song.notes = song.notes.filter(x => x !== sel); sel = null; render(); }
+    function editDelete() { if (!sel) return; snap(); song.notes = song.notes.filter(x => x !== sel); sel = null; render(); }
     const select = n => { sel = n; sound(n.n, n.len, n.v); if (keysMode) cursor = Math.min(total(), n.s + n.len); render(); };
 
     /* ----- adding ----- */
     function stampChord(deg, st) {
       if (av < 2) { av = 2; MU.toast('Chords go in the Chords voice'); } win = 'low';
       const v = av, names = chordNotes(deg, seventh, v === 3 ? 2 : 3); let len = 0;
+      snap(); const e = Math.min((Math.floor(st / PER) + 1) * PER, st + curLen);
+      song.notes = song.notes.filter(x => !(x.v === v && x.s < e && x.s + x.len > st)); // a new chord replaces what was under it
       names.forEach(nm => { len = addNote(st, nm, curLen, v).len; });
       MU.chord(names, Math.min(1.4, len * 60 / song.tempo / 2), { inst: song.voices[v].inst, vol: .2 }); return len;
     }
     function gridTap(st, row) {
       if (chordSel != null) { stampChord(chordSel, st); sel = null; render(); return; }
       if (keysMode) { sel = null; cursor = st; render(); return; }
-      const nm = stepName(row, sharpMode && canSharp(row) && row < HI), n = addNote(st, nm, curLen, av); sound(nm, n.len); sel = null; render();
+      snap(); const nm = stepName(row, sharpMode && canSharp(row) && row < HI), n = addNote(st, nm, curLen, av); sound(nm, n.len); sel = null; render();
     }
     const advance = () => { const barEnd = (Math.floor(cursor / PER) + 1) * PER; cursor = Math.min(total(), cursor + Math.min(curLen, barEnd - cursor)); bar = Math.min(song.bars - 1, Math.floor(Math.min(cursor, total() - 1) / PER)); };
     function keyPress(nm) {
       const st = MU.stepOf(nm); if (st < LO || st > HI) return;
-      if (sel) { sel.n = nm; render(); return; }
+      if (sel && keyReplace) { snap(); sel.n = nm; render(); return; }
+      sel = null;
       if (cursor >= total()) return MU.toast('The song is full. Add a bar or press play!');
-      const n = addNote(cursor, nm, curLen, av);
+      snap(); const n = addNote(cursor, nm, curLen, av);
       if (!stack) { cursor = Math.min(total(), cursor + n.len); bar = Math.min(song.bars - 1, Math.floor(Math.min(cursor, total() - 1) / PER)); }
       render();
     }
@@ -175,14 +184,14 @@
     function harmonize(delta) {
       const src = song.notes.filter(n => n.v === 0); if (!src.length) return MU.toast('Write a melody first (in the Melody voice)');
       if (song.notes.some(n => n.v === 1) && !confirm('Replace your Harmony line?')) return;
-      song.notes = song.notes.filter(n => n.v !== 1); let skipped = 0;
+      snap(); song.notes = song.notes.filter(n => n.v !== 1); let skipped = 0;
       src.forEach(n => { const st = MU.stepOf(n.n) + delta; if (st < LO || st > HI) { skipped++; return; } song.notes.push({ s: n.s, n: stepName(st, false), len: n.len, v: 1 }); });
       av = 1; sel = null; render(); MU.toast('Harmony added! Press play.' + (skipped ? ' (' + skipped + ' notes were out of range)' : ''));
     }
     function autoChords() {
       if (!song.notes.some(n => n.v === 0)) return MU.toast('Write a melody first (in the Melody voice)');
       if (song.notes.some(n => n.v === 2) && !confirm('Replace your Chords?')) return;
-      song.notes = song.notes.filter(n => n.v !== 2); const degs = lvl === 1 ? [0, 3, 4] : [0, 3, 4, 5, 1, 2];
+      snap(); song.notes = song.notes.filter(n => n.v !== 2); const degs = lvl === 1 ? [0, 3, 4] : [0, 3, 4, 5, 1, 2];
       for (let b = 0; b < song.bars; b++) {
         const mel = inBar(b).filter(n => n.v === 0); if (!mel.length) continue;
         let best = 0, bestScore = -1;
@@ -195,8 +204,8 @@
     /* ----- skeleton ----- */
     const root = h('div', { class: 'stage' }); ctx.root.append(root);
     root.append(ctx.sayPrompt(cfg.prompt));
-    const transport = h('div'), voiceBox = h('div'), body = h('div'), editBox = h('div'), inputBox = h('div'), helpBox = h('div'), foot = h('div');
-    root.append(transport, voiceBox, body, editBox, inputBox, helpBox, foot);
+    const transport = h('div'), loopBox = h('div'), toolsBox = h('div'), voiceBox = h('div'), body = h('div'), editBox = h('div'), inputBox = h('div'), helpBox = h('div'), foot = h('div');
+    root.append(transport, loopBox, voiceBox, body, editBox, inputBox, helpBox, toolsBox, foot);
 
     const playBtn = h('button', { class: 'btn mint' }, '▶ Play'), tempoLbl = h('b', null, song.tempo + ' BPM');
     const tempo = h('input', { type: 'range', min: 50, max: 160, value: song.tempo, 'aria-label': 'Tempo' });
@@ -205,8 +214,9 @@
     function stop() { if (clk) { clk.stop(); clk = null; } playBtn.textContent = '▶ Play'; playPos = -1; markNow(); }
     function start() {
       stop(); MU.stopAll();
-      clk = MU.clock({ bpm: song.tempo, stepsPerBeat: 2, steps: total(), once: !loop, onEnd: () => { clk = null; playBtn.textContent = '▶ Play'; playPos = -1; markNow(); },
-        onStep: (i, w, secs) => { playStep(song, i, secs, cfg.drums); setTimeout(() => { if (clk) { playPos = i; markNow(); } }, secs * 1000); } });
+      const a = Math.min(loopA, song.bars - 1), b = Math.max(a, Math.min(loopB == null ? song.bars - 1 : loopB, song.bars - 1)), off = a * PER;
+      clk = MU.clock({ bpm: song.tempo, stepsPerBeat: 2, steps: (b - a + 1) * PER, once: !loop, onEnd: () => { clk = null; playBtn.textContent = '▶ Play'; playPos = -1; markNow(); },
+        onStep: (i0, w, secs) => { const i = i0 + off; playStep(song, i, secs, cfg.drums); setTimeout(() => { if (clk) { playPos = i; markNow(); } }, secs * 1000); } });
       clk.start(); playBtn.textContent = '■ Stop';
     }
     playBtn.onclick = () => (clk && clk.running) ? stop() : start();
@@ -220,6 +230,52 @@
       h('div', { class: 'row mt8' }, h('span', null, '🐢'), tempo, h('span', null, '🐇')), h('div', { class: 'center small' }, tempoLbl), h('div', { class: 'mt8' }, viewBtns));
     drawViewBtns();
 
+    /* loop section */
+    function drawLoop() {
+      loopBox.innerHTML = '';
+      if (loopA >= song.bars) loopA = song.bars - 1; if (loopB != null && loopB >= song.bars) loopB = song.bars - 1; if (loopB != null && loopB < loopA) loopB = loopA;
+      const opt = (i, cur) => h('option', { value: i, selected: i === cur }, 'Bar ' + (i + 1));
+      const selA = h('select', { class: 'inp', style: { width: 'auto', padding: '6px 10px' }, 'aria-label': 'Loop from bar', onchange: e => { loopA = Number(e.target.value); if (loopB != null && loopB < loopA) loopB = loopA; if (clk) start(); drawLoop(); } }, Array.from({ length: song.bars }, (_, i) => opt(i, loopA)));
+      const selB = h('select', { class: 'inp', style: { width: 'auto', padding: '6px 10px' }, 'aria-label': 'Loop to bar', onchange: e => { loopB = Number(e.target.value); if (loopB < loopA) loopA = loopB; if (clk) start(); drawLoop(); } }, Array.from({ length: song.bars }, (_, i) => i >= loopA ? opt(i, loopB == null ? song.bars - 1 : loopB) : null));
+      loopBox.append(h('div', { class: 'row mt8', style: { justifyContent: 'center', gap: '8px', flexWrap: 'wrap' } }, h('span', { class: 'small' }, '🔁 Play from'), selA, h('span', { class: 'small' }, 'to'), selB,
+        h('button', { class: 'chip btnlike', onclick: () => { loopA = bar; loopB = bar; loop = true; loopBtn.classList.add('on'); drawLoop(); start(); } }, 'Loop this bar'),
+        h('button', { class: 'chip btnlike', onclick: () => { loopA = 0; loopB = null; if (clk) start(); drawLoop(); } }, 'Whole song'),
+        h('button', { class: 'chip btnlike', onclick: undo }, '↩ Undo' + (undoStack.length ? ' (' + undoStack.length + ')' : ''))));
+    }
+    /* bar tools: clear, copy ("loop") one bar's layers into other bars */
+    const layerName = i => i < 0 ? '🥁 Beats' : VOICES[i].e + ' ' + VOICES[i].name;
+    const inScope = () => { const l = []; if (cfg.drums && scope.d) l.push(-1); scope.v.forEach((x, i) => { if (x) l.push(i); }); return l; };
+    function clearBar(b, layers) {
+      const a = b * PER, e = a + PER; song.notes = song.notes.filter(n => !(n.s >= a && n.s < e && layers.indexOf(n.v) > -1));
+      if (layers.indexOf(-1) > -1) Object.keys(song.drums).forEach(k => { for (let i = a; i < e; i++) song.drums[k][i] = false; });
+    }
+    function copyBar(src, dst, layers) {
+      clearBar(dst, layers); const so = src * PER, dof = dst * PER;
+      song.notes.filter(n => n.s >= so && n.s < so + PER && layers.indexOf(n.v) > -1 && !n.__c).slice().forEach(n => song.notes.push({ s: n.s - so + dof, n: n.n, len: n.len, v: n.v }));
+      if (layers.indexOf(-1) > -1) Object.keys(song.drums).forEach(k => { for (let i = 0; i < PER; i++) song.drums[k][dof + i] = !!song.drums[k][so + i]; });
+    }
+    function drawTools() {
+      toolsBox.innerHTML = ''; const layers = inScope(); [...targets].forEach(t => { if (t >= song.bars || t === bar) targets.delete(t); });
+      const lay = h('div', { class: 'wrapx', style: { justifyContent: 'center' } });
+      if (cfg.drums) lay.append(h('button', { class: 'chip btnlike' + (scope.d ? ' on' : ''), onclick: () => { scope.d = !scope.d; render(); } }, '🥁 Beats'));
+      VOICES.forEach((V, i) => lay.append(h('button', { class: 'chip btnlike' + (scope.v[i] ? ' on' : ''), style: scope.v[i] ? { background: V.c } : null, onclick: () => { scope.v[i] = !scope.v[i]; render(); } }, V.e + ' ' + V.name)));
+      const tg = h('div', { class: 'wrapx', style: { justifyContent: 'center' } });
+      for (let b = 0; b < song.bars; b++) if (b !== bar) tg.append(h('button', { class: 'chip btnlike' + (targets.has(b) ? ' on' : ''), onclick: () => { targets.has(b) ? targets.delete(b) : targets.add(b); drawTools(); } }, 'Bar ' + (b + 1)));
+      const quick = h('div', { class: 'wrapx mt8', style: { justifyContent: 'center' } },
+        h('button', { class: 'chip btnlike', onclick: () => { targets = new Set(Array.from({ length: song.bars }, (_, i) => i).filter(i => i !== bar)); drawTools(); } }, 'All other bars'),
+        h('button', { class: 'chip btnlike', onclick: () => { targets = new Set(Array.from({ length: song.bars }, (_, i) => i).filter(i => i > bar)); drawTools(); } }, 'Bars after this'),
+        h('button', { class: 'chip btnlike', onclick: () => { targets = new Set(Array.from({ length: song.bars }, (_, i) => i).filter(i => i > bar && (i - bar) % 2 === 0)); drawTools(); } }, 'Every other bar'),
+        h('button', { class: 'chip btnlike', onclick: () => { targets = new Set(); drawTools(); } }, 'None'));
+      const names = layers.map(layerName).join(', ') || 'nothing picked';
+      toolsBox.append(h('div', { class: 'card flat mt16' }, h('b', null, '🧰 Bar tools'),
+        h('p', { class: 'small muted mt8' }, 'Pick which layers to work on, then clear them or repeat this bar. Pasted bars are real notes, so you can still edit every one. Made a mistake? ↩ Undo.'), lay,
+        h('div', { class: 'wrapx mt12', style: { justifyContent: 'center' } },
+          h('button', { class: 'btn ghost', onclick: () => { if (!layers.length) return MU.toast('Pick a layer first'); snap(); clearBar(bar, layers); sel = null; render(); } }, 'Clear Bar ' + (bar + 1)),
+          h('button', { class: 'btn ghost', onclick: () => { if (!layers.length) return MU.toast('Pick a layer first'); if (!confirm('Clear ' + names + ' in the whole song?')) return; snap(); for (let b = 0; b < song.bars; b++) clearBar(b, layers); sel = null; render(); } }, 'Clear whole song')),
+        h('p', { class: 'small mt12 center' }, h('b', null, 'Repeat Bar ' + (bar + 1) + ' (' + names + ') into:')), tg, quick,
+        h('div', { class: 'center mt12' }, h('button', { class: 'btn mint', onclick: () => { if (!layers.length) return MU.toast('Pick a layer first'); if (!targets.size) return MU.toast('Pick the bars to repeat into'); snap(); [...targets].forEach(t => copyBar(bar, t, layers)); sel = null; MU.toast('Repeated into ' + targets.size + ' bar' + (targets.size > 1 ? 's' : '') + '. Replaced what was there.'); render(); } }, '📋 Replace those bars with this one'))));
+    }
+
     /* voices */
     function drawVoices() {
       voiceBox.innerHTML = '';
@@ -232,6 +288,7 @@
         m.onclick = e => { e.stopPropagation(); vs.mute = !vs.mute; render(); };
         chips.append(h('div', { class: 'vwrap' }, b, m));
       });
+      if (cfg.drums) { const dm = song.drumMute; const b = h('div', { class: 'vwrap' }, h('div', { class: 'voicechip', style: { '--c': '#6B4FD8', opacity: dm ? .55 : 1 } }, h('span', null, '🥁 Beats'), h('small', null, 'drum rows')), h('button', { class: 'vmute', 'aria-label': dm ? 'Unmute beats' : 'Mute beats', onclick: () => { song.drumMute = !song.drumMute; render(); } }, dm ? '🔇' : '🔊')); chips.append(b); }
       const sel2 = h('select', { class: 'inp', style: { width: 'auto', padding: '6px 10px' }, 'aria-label': 'Sound for ' + VOICES[av].name, onchange: e => { song.voices[av].inst = e.target.value; sound('C4', 2); } }, INSTS.map(([k, t]) => h('option', { value: k, selected: k === song.voices[av].inst }, t)));
       voiceBox.append(h('div', { class: 'small center mt12' }, h('b', null, 'Voices'), ' are layers that play together. Pick one, then add notes to it.'), chips,
         h('div', { class: 'row mt8', style: { justifyContent: 'center', gap: '8px' } }, h('span', { class: 'small' }, VOICES[av].e + ' ' + VOICES[av].name + ' plays:'), sel2));
@@ -246,7 +303,7 @@
         row.append(h('button', { class: bar === b ? 'on' : '', onclick: () => { bar = b; sel = null; if (keysMode && Math.floor(cursor / PER) !== b) cursor = b * PER; render(); } }, 'Bar ' + (b + 1) + (playing ? ' ▶' : has ? ' •' : '')));
       }
       if (song.bars < MAXBARS) row.append(h('button', { onclick: () => { song.bars++; fit(); bar = song.bars - 1; render(); } }, '＋ Bar'));
-      if (song.bars > 1) row.append(h('button', { onclick: () => { if (inBar(song.bars - 1).length && !confirm('Remove the last bar and its notes?')) return; song.bars--; fit(); if (bar >= song.bars) bar = song.bars - 1; if (cursor > total()) cursor = total(); sel = null; render(); } }, '－ Bar'));
+      if (song.bars > 1) row.append(h('button', { onclick: () => { if (inBar(song.bars - 1).length && !confirm('Remove the last bar and its notes?')) return; snap(); song.bars--; fit(); if (bar >= song.bars) bar = song.bars - 1; if (cursor > total()) cursor = total(); sel = null; render(); } }, '－ Bar'));
       return row;
     }
     const COLS = '16.4% repeat(8, 1fr)';
@@ -354,17 +411,28 @@
       LENS.filter(l => l.lvl <= lvl).forEach(l => { const b = h('button', { class: 'chip btnlike lenchip' + (cur === l.len ? ' on' : '') }, MU.noteShape(l.kind, 30), h('span', { class: 'small' }, l.dot ? l.name.replace('Dotted ', '') + ' •' : l.name)); b.onclick = () => { if (sel) editLen(l.len); else { curLen = l.len; render(); } }; row.append(b); });
       return row;
     }
+    function chordGroup() { return sel ? song.notes.filter(x => x.v === sel.v && x.s === sel.s && x.len === sel.len) : []; }
+    function chordSwap() {
+      const grp = chordGroup(); if (grp.length < 2) return null;
+      const degs = lvl === 1 ? [0, 3, 4] : [0, 1, 2, 3, 4, 5, 6], v = sel.v, s0 = sel.s, ln = sel.len;
+      const row = h('div', { class: 'wrapx', style: { justifyContent: 'center' } }, degs.map(d => h('button', { class: 'chip btnlike', onclick: () => {
+        snap(); song.notes = song.notes.filter(x => grp.indexOf(x) < 0); const names = chordNotes(d, seventh && lvl >= 3, v === 3 ? 2 : 3);
+        names.forEach(nm => addNote(s0, nm, ln, v)); MU.chord(names, 1, { inst: song.voices[v].inst, vol: .2 }); sel = song.notes.find(x => x.v === v && x.s === s0 && x.n === names[0]) || null; render(); } }, chordName(d, seventh && lvl >= 3))));
+      return h('div', null, h('p', { class: 'small mt8 center' }, h('b', null, '🎹 Change this whole chord (' + grp.length + ' notes) to:')), row,
+        h('div', { class: 'center mt8' }, h('button', { class: 'btn ghost', onclick: () => { snap(); song.notes = song.notes.filter(x => grp.indexOf(x) < 0); sel = null; render(); } }, '🗑 Delete the whole chord')));
+    }
     function editPanel() {
       editBox.innerHTML = ''; if (!sel) return;
       const V = VOICES[sel.v];
       editBox.append(h('div', { class: 'card flat editbar mt12' },
         h('b', null, '✏️ Editing: ' + pretty(sel.n) + ' · ' + lenInfo(sel.len).name.toLowerCase() + ' note · ' + V.e + ' ' + V.name),
-        keysMode ? h('p', { class: 'small muted' }, 'Tap a piano key to change this note, or use the buttons.') : h('p', { class: 'small muted' }, 'Change it with the buttons, or tap an empty spot to add another note.'),
+        keysMode ? h('div', { class: 'wrapx', style: { justifyContent: 'center' } }, h('button', { class: 'chip btnlike' + (keyReplace ? ' on' : ''), onclick: () => { keyReplace = !keyReplace; render(); } }, keyReplace ? '🎹 Keys change this note: ON' : '🎹 Keys change this note: off'), h('span', { class: 'small muted' }, keyReplace ? 'Tap a key to swap the pitch.' : 'Keys add new notes; use ⬆⬇ to change this one.')) : h('p', { class: 'small muted' }, 'Change it with the buttons, or tap an empty spot to add another note.'),
         h('div', { class: 'wrapx mt8', style: { justifyContent: 'center' } },
           h('button', { class: 'btn ghost', onclick: () => editPitch(1) }, '⬆ Higher'), h('button', { class: 'btn ghost', onclick: () => editPitch(-1) }, '⬇ Lower'),
           lvl >= 2 ? h('button', { class: 'btn ghost', onclick: editSharp }, isSharp(sel.n) ? '♮ Natural' : '♯ Sharp') : null,
           h('button', { class: 'btn ghost', onclick: () => editMove(-1) }, '◀ Earlier'), h('button', { class: 'btn ghost', onclick: () => editMove(1) }, 'Later ▶')),
         h('p', { class: 'small mt8 center' }, 'Length:'), lenChips(),
+        chordSwap(),
         h('p', { class: 'small mt8 center' }, 'Voice:'), h('div', { class: 'wrapx', style: { justifyContent: 'center' } }, VOICES.map((vv, i) => h('button', { class: 'chip btnlike' + (sel.v === i ? ' on' : ''), style: sel.v === i ? { background: vv.c } : null, onclick: () => editVoice(i) }, vv.e + ' ' + vv.name))),
         h('div', { class: 'wrapx mt12', style: { justifyContent: 'center' } }, h('button', { class: 'btn coral', onclick: editDelete }, '🗑 Delete note'), h('button', { class: 'btn mint', onclick: () => { sel = null; render(); } }, '✔ Done editing'))));
     }
@@ -410,7 +478,7 @@
       foot.innerHTML = '';
       foot.append(h('div', { class: 'wrapx mt16', style: { justifyContent: 'center' } },
         h('button', { class: 'btn ghost', onclick: saveDialog }, '💾 Save'), h('button', { class: 'btn ghost', onclick: openDialog }, '📂 My songs'), h('button', { class: 'btn ghost', onclick: exportMidi }, '⬇ MIDI file'),
-        h('button', { class: 'btn ghost', onclick: () => { if (!song.notes.length && !Object.values(song.drums).some(a => a.some(Boolean))) return; if (confirm('Clear everything and start fresh?')) { song.notes = []; Object.keys(song.drums).forEach(k => song.drums[k] = []); fit(); sel = null; cursor = 0; bar = 0; savedId = null; render(); } } }, '🧹 Clear')),
+        h('button', { class: 'btn ghost', onclick: () => { if (!song.notes.length && !Object.values(song.drums).some(a => a.some(Boolean))) return; if (confirm('Clear everything and start fresh?')) { snap(); song.notes = []; Object.keys(song.drums).forEach(k => song.drums[k] = []); fit(); sel = null; cursor = 0; bar = 0; savedId = null; render(); } } }, '🧹 Clear')),
         h('button', { class: 'btn navy wide mt12', onclick: finish }, "I'm happy with my song ✔"));
     }
     function exportMidi() {
@@ -430,7 +498,7 @@
       const list = MU.songList(), box = h('div', null, h('h3', null, '📂 My songs'));
       if (!list.length) box.append(h('p', { class: 'muted mt8' }, 'Nothing saved yet. Make a song and press Save!'));
       list.forEach(sg => box.append(h('div', { class: 'row mt8', style: { justifyContent: 'space-between' } }, h('span', { style: { flex: 1, textAlign: 'left' } }, h('b', null, sg.name || 'My song'), h('div', { class: 'small muted' }, new Date(sg.ts).toLocaleDateString())),
-        h('button', { class: 'chip btnlike', onclick: () => { stop(); const sn = unpack(sg); song.bars = sn.bars; song.tempo = sn.tempo; song.voices = sn.voices; song.notes = sn.notes; song.drums = sn.drums; song.name = sg.name; savedId = sg.id; tempo.value = song.tempo; tempoLbl.textContent = song.tempo + ' BPM'; fit(); bar = 0; sel = null; cursor = Math.min(total(), song.notes.reduce((a, n) => Math.max(a, n.s + n.len), 0)); MU.closeModal(); render(); } }, 'Open'),
+        h('button', { class: 'chip btnlike', onclick: () => { stop(); const sn = unpack(sg); song.bars = sn.bars; song.tempo = sn.tempo; song.voices = sn.voices; song.drumMute = sn.drumMute; undoStack = []; song.notes = sn.notes; song.drums = sn.drums; song.name = sg.name; savedId = sg.id; tempo.value = song.tempo; tempoLbl.textContent = song.tempo + ' BPM'; fit(); bar = 0; sel = null; cursor = Math.min(total(), song.notes.reduce((a, n) => Math.max(a, n.s + n.len), 0)); MU.closeModal(); render(); } }, 'Open'),
         h('button', { class: 'chip btnlike', onclick: e => { if (confirm('Delete "' + (sg.name || 'My song') + '"?')) { MU.deleteSong(sg.id); e.currentTarget.parentNode.remove(); } } }, '🗑'))));
       box.append(h('div', { class: 'center mt16' }, h('button', { class: 'btn ghost', onclick: MU.closeModal }, 'Close'))); MU.modal(box, { dismiss: true });
     }
@@ -450,9 +518,9 @@
     }
     function render() {
       if (cursor > total()) cursor = total();
-      drawVoices(); body.innerHTML = ''; body.append(tabs(), view === 'staff' ? staffView() : blockView());
+      drawLoop(); drawVoices(); body.innerHTML = ''; body.append(tabs(), view === 'staff' ? staffView() : blockView());
       if (cfg.drums) body.append(drumView());
-      editPanel(); inputPanel(); helpers(); footer(); markNow();
+      editPanel(); inputPanel(); helpers(); drawTools(); footer(); markNow();
     }
     render();
     MU.onLeave(stop);
