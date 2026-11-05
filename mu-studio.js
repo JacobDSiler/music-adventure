@@ -106,7 +106,7 @@
     const lvl = ctx.lvl, keysMode = cfg.input === 'keys';
     const song = { bars: cfg.bars || 4, tempo: lvl === 1 ? 80 : 96, voices: newVoices(), notes: [], drums: { kick: [], snare: [], hat: [], tamb: [] } };
     let view = cfg.view || 'block', bar = 0, sel = null, cursor = 0, curLen = 2, sharpMode = false, showNames = lvl === 1, loop = true;
-    let keyReplace = false, loopA = 0, loopB = null, targets = new Set(), undoStack = [], scope = { d: true, v: [true, true, true, true] };
+    let head = 0, headSet = false, headMode = false, keyReplace = false, loopA = 0, loopB = null, targets = new Set(), undoStack = [], scope = { d: true, v: [true, true, true, true] };
     let av = 0, win = 'high', stack = false, chordSel = null, seventh = false, clk = null, playPos = -1, savedId = null;
     const total = () => song.bars * PER;
     function fit() {
@@ -144,7 +144,7 @@
     }
     function editVoice(v) { if (!sel) return; song.notes = song.notes.filter(x => x === sel || !(x.v === v && x.n === sel.n && x.s < sel.s + sel.len && x.s + x.len > sel.s)); sel.v = v; sound(sel.n, sel.len, v); render(); }
     function editDelete() { if (!sel) return; snap(); song.notes = song.notes.filter(x => x !== sel); sel = null; render(); }
-    const select = n => { sel = n; sound(n.n, n.len, n.v); if (keysMode) cursor = Math.min(total(), n.s + n.len); render(); };
+    const select = n => { if (headMode) return setHead(n.s); sel = n; sound(n.n, n.len, n.v); if (keysMode) cursor = Math.min(total(), n.s + n.len); render(); };
 
     /* ----- adding ----- */
     function stampChord(deg, st) {
@@ -155,7 +155,12 @@
       names.forEach(nm => { len = addNote(st, nm, curLen, v).len; });
       MU.chord(names, Math.min(1.4, len * 60 / song.tempo / 2), { inst: song.voices[v].inst, vol: .2 }); return len;
     }
+    function setHead(st) {
+      head = Math.max(0, Math.min(total() - 1, st)); headSet = head > 0; bar = Math.floor(head / PER); sel = null;
+      if (clk && clk.running) start(); render();
+    }
     function gridTap(st, row) {
+      if (headMode) return setHead(st);
       if (chordSel != null) { stampChord(chordSel, st); sel = null; render(); return; }
       if (keysMode) { sel = null; cursor = st; render(); return; }
       snap(); const nm = stepName(row, sharpMode && canSharp(row) && row < HI), n = addNote(st, nm, curLen, av); sound(nm, n.len); sel = null; render();
@@ -215,8 +220,9 @@
     function stop() { if (clk) { clk.stop(); clk = null; } playBtn.textContent = '▶ Play'; playPos = -1; markNow(); }
     function start() {
       stop(); MU.stopAll();
-      const a = Math.min(loopA, song.bars - 1), b = Math.max(a, Math.min(loopB == null ? song.bars - 1 : loopB, song.bars - 1)), off = a * PER;
-      clk = MU.clock({ bpm: song.tempo, stepsPerBeat: 2, steps: (b - a + 1) * PER, once: !loop, onEnd: () => { clk = null; playBtn.textContent = '▶ Play'; playPos = -1; markNow(); },
+      const a = Math.min(loopA, song.bars - 1), b = Math.max(a, Math.min(loopB == null ? song.bars - 1 : loopB, song.bars - 1));
+      let off = a * PER, endS = (b + 1) * PER; if (headSet) { if (head >= off && head < endS) off = head; else { off = head; endS = total(); } }
+      clk = MU.clock({ bpm: song.tempo, stepsPerBeat: 2, steps: endS - off, once: !loop, onEnd: () => { clk = null; playBtn.textContent = '▶ Play'; playPos = -1; markNow(); },
         onStep: (i0, w, secs) => { const i = i0 + off; playStep(song, i, secs, cfg.drums); setTimeout(() => { if (clk) { playPos = i; markNow(); } }, secs * 1000); } });
       clk.start(); playBtn.textContent = '■ Stop';
     }
@@ -236,11 +242,15 @@
       loopBox.innerHTML = '';
       if (loopA >= song.bars) loopA = song.bars - 1; if (loopB != null && loopB >= song.bars) loopB = song.bars - 1; if (loopB != null && loopB < loopA) loopB = loopA;
       const opt = (i, cur) => h('option', { value: i, selected: i === cur }, 'Bar ' + (i + 1));
-      const selA = h('select', { class: 'inp', style: { width: 'auto', padding: '6px 10px' }, 'aria-label': 'Loop from bar', onchange: e => { loopA = Number(e.target.value); if (loopB != null && loopB < loopA) loopB = loopA; if (clk) start(); drawLoop(); } }, Array.from({ length: song.bars }, (_, i) => opt(i, loopA)));
-      const selB = h('select', { class: 'inp', style: { width: 'auto', padding: '6px 10px' }, 'aria-label': 'Loop to bar', onchange: e => { loopB = Number(e.target.value); if (loopB < loopA) loopA = loopB; if (clk) start(); drawLoop(); } }, Array.from({ length: song.bars }, (_, i) => i >= loopA ? opt(i, loopB == null ? song.bars - 1 : loopB) : null));
+      const selA = h('select', { class: 'inp', style: { width: 'auto', padding: '6px 10px' }, 'aria-label': 'Loop from bar', onchange: e => { headSet = false; head = 0; loopA = Number(e.target.value); if (loopB != null && loopB < loopA) loopB = loopA; if (clk) start(); drawLoop(); } }, Array.from({ length: song.bars }, (_, i) => opt(i, loopA)));
+      const selB = h('select', { class: 'inp', style: { width: 'auto', padding: '6px 10px' }, 'aria-label': 'Loop to bar', onchange: e => { headSet = false; head = 0; loopB = Number(e.target.value); if (loopB < loopA) loopA = loopB; if (clk) start(); drawLoop(); } }, Array.from({ length: song.bars }, (_, i) => i >= loopA ? opt(i, loopB == null ? song.bars - 1 : loopB) : null));
+      if (headMode) loopBox.append(h('div', { class: 'feedback good mt8' }, '📍 Tap any square, note or beat number to choose where Play starts. Nothing is edited while this is on. Press the button again to go back to editing.'));
+      loopBox.append(h('div', { class: 'small center mt8' }, '▶ Play starts at Bar ' + (Math.floor(head / PER) + 1) + ', beat ' + (Math.floor((head % PER) / 2) + 1) + ((head % 2) ? ' (the “&”)' : '')));
       loopBox.append(h('div', { class: 'row mt8', style: { justifyContent: 'center', gap: '8px', flexWrap: 'wrap' } }, h('span', { class: 'small' }, '🔁 Play from'), selA, h('span', { class: 'small' }, 'to'), selB,
-        h('button', { class: 'chip btnlike', onclick: () => { loopA = bar; loopB = bar; loop = true; loopBtn.classList.add('on'); drawLoop(); start(); } }, 'Loop this bar'),
-        h('button', { class: 'chip btnlike', onclick: () => { loopA = 0; loopB = null; if (clk) start(); drawLoop(); } }, 'Whole song'),
+        h('button', { class: 'chip btnlike', onclick: () => { headSet = false; head = 0; loopA = bar; loopB = bar; loop = true; loopBtn.classList.add('on'); drawLoop(); start(); } }, 'Loop this bar'),
+        h('button', { class: 'chip btnlike', onclick: () => { loopA = 0; loopB = null; headSet = false; head = 0; if (clk) start(); render(); } }, 'Whole song'),
+        h('button', { class: 'chip btnlike' + (headMode ? ' on' : ''), onclick: () => { headMode = !headMode; render(); } }, headMode ? '📍 Setting playhead' : '📍 Set playhead'),
+        h('button', { class: 'chip btnlike', onclick: () => { headSet = false; head = 0; bar = 0; if (clk && clk.running) start(); render(); } }, '⏮ Playhead to start'),
         h('button', { class: 'chip btnlike', onclick: undo }, '↩ Undo' + (undoStack.length ? ' (' + undoStack.length + ')' : ''))));
     }
     /* bar tools: clear, copy ("loop") one bar's layers into other bars */
@@ -308,7 +318,7 @@
       return row;
     }
     const COLS = '16.4% repeat(8, 1fr)';
-    const beatHead = () => h('div', { class: 'mgrid', style: { gridTemplateColumns: COLS, gridTemplateRows: '16px' } }, h('div'), ['1', '&', '2', '&', '3', '&', '4', '&'].map((x, i) => h('div', { class: 'mhead', 'data-col': i }, x)));
+    const beatHead = () => h('div', { class: 'mgrid', style: { gridTemplateColumns: COLS, gridTemplateRows: '16px' } }, h('div'), ['1', '&', '2', '&', '3', '&', '4', '&'].map((x, i) => h('div', { class: 'mhead', 'data-col': i, style: { cursor: 'pointer' }, onclick: () => setHead(bar * PER + i), title: 'Start playing here' }, x)));
     const dimmed = n => song.voices[n.v].mute ? .3 : (n.v === av ? 1 : .62);
 
     /* ----- block view ----- */
@@ -400,7 +410,7 @@
         grid.append(h('div', { class: 'mlab', style: { gridRow: ri + 1, gridColumn: 1 } }, d.n));
         for (let c = 0; c < PER; c++) {
           const cell = h('button', { class: 'cell' + (c % 2 === 0 ? ' beat' : '') + (song.drums[d.k][base + c] ? ' on' : ''), 'data-col': c, style: { gridRow: ri + 1, gridColumn: c + 2, '--c': d.c, minHeight: 0 }, 'aria-label': d.n + ' step ' + (c + 1) });
-          cell.onclick = () => { const v = !song.drums[d.k][base + c]; song.drums[d.k][base + c] = v; cell.classList.toggle('on', v); if (v) MU.drum(d.k, { vol: .6 }); }; grid.append(cell);
+          cell.onclick = () => { if (headMode) return setHead(base + c); const v = !song.drums[d.k][base + c]; song.drums[d.k][base + c] = v; cell.classList.toggle('on', v); if (v) MU.drum(d.k, { vol: .6 }); }; grid.append(cell);
         }
       });
       wrap.append(grid); return wrap;
@@ -511,10 +521,11 @@
     }
     function markNow() {
       const c = playPos >= 0 && Math.floor(playPos / PER) === bar ? playPos - bar * PER : -1;
+      const hc = headSet && Math.floor(head / PER) === bar ? head % PER : -1;
       root.querySelectorAll('[data-col]').forEach(el => {
-        const on = Number(el.getAttribute('data-col')) === c;
-        if (el.classList.contains('colbg')) el.setAttribute('fill', on ? 'rgba(245,184,61,.4)' : (Number(el.getAttribute('data-col')) % 2 === 0 ? 'rgba(107,79,216,.05)' : 'transparent'));
-        else el.classList.toggle('now', on);
+        const col = Number(el.getAttribute('data-col')), on = col === c;
+        if (el.classList.contains('colbg')) { el.setAttribute('fill', on ? 'rgba(245,184,61,.4)' : (col % 2 === 0 ? 'rgba(107,79,216,.05)' : 'transparent')); el.setAttribute('stroke', col === hc ? '#E0529C' : 'none'); el.setAttribute('stroke-width', col === hc ? 2.5 : 0); }
+        else { el.classList.toggle('now', on); el.classList.toggle('phead', col === hc); }
       });
     }
     function render() {
