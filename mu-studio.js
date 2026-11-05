@@ -7,7 +7,7 @@
   const MU = window.MU, h = MU.h, s = MU.s;
   const PER = 8, MAXBARS = 8, LENS_SEC = 0.95;
   const LET = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
-  const LO = MU.stepOf('C3'), HI = MU.stepOf('C6'), SPLIT = MU.stepOf('C4'); // notes from C4 up live on the treble staff
+  const LO = MU.stepOf('C1'), HI = MU.stepOf('C6'), SPLIT = MU.stepOf('C4'); // notes from C4 up live on the treble staff
   const LENS = [
     { len: 1, name: 'Eighth', kind: 'eighth', lvl: 2 }, { len: 2, name: 'Quarter', kind: 'quarter', lvl: 1 },
     { len: 3, name: 'Dotted quarter', kind: 'quarter', dot: true, lvl: 3 }, { len: 4, name: 'Half', kind: 'half', lvl: 1 },
@@ -119,7 +119,8 @@
       const e = undoStack.pop(); if (!e) return MU.toast('Nothing to undo'); const o = JSON.parse(e);
       song.notes = o.n; song.drums = o.d; song.bars = o.b; fit(); if (bar >= song.bars) bar = song.bars - 1; sel = null; render();
     }
-    const winLo = () => MU.stepOf(win === 'high' ? 'C4' : 'C3'), winHi = () => winLo() + 14;
+    const WINS = { high: ['C4', 'C6', '🔼 High (C4–C6)', 'Higher keys'], low: ['C3', 'C5', '🔽 Low (C3–C5)', 'Lower keys'], bass: ['C2', 'C4', '🎸 Bass (C2–C4)', 'Bass keys'], deep: ['C1', 'C3', '⏬ Deep (C1–C3)', 'Deep keys'] };
+    const winLo = () => MU.stepOf(WINS[win][0]), winHi = () => winLo() + 14;
 
     /* ----- model ----- */
     function addNote(st, name, len, v) {
@@ -147,7 +148,7 @@
 
     /* ----- adding ----- */
     function stampChord(deg, st) {
-      if (av < 2) { av = 2; MU.toast('Chords go in the Chords voice'); } win = 'low';
+      if (av < 2) { av = 2; MU.toast('Chords go in the Chords voice'); } win = av === 3 ? 'bass' : 'low';
       const v = av, names = chordNotes(deg, seventh, v === 3 ? 2 : 3); let len = 0;
       snap(); const e = Math.min((Math.floor(st / PER) + 1) * PER, st + curLen);
       song.notes = song.notes.filter(x => !(x.v === v && x.s < e && x.s + x.len > st)); // a new chord replaces what was under it
@@ -283,7 +284,7 @@
       VOICES.forEach((V, i) => {
         const on = av === i, vs = song.voices[i], count = song.notes.filter(n => n.v === i).length;
         const b = h('button', { class: 'voicechip' + (on ? ' on' : '') + (vs.mute ? ' muted' : ''), style: { '--c': V.c } }, h('span', { class: 'vd' }), h('span', null, V.e + ' ' + V.name), h('small', null, count ? count + ' notes' : 'empty'));
-        b.onclick = () => { av = i; win = i >= 2 ? 'low' : 'high'; sel = null; render(); };
+        b.onclick = () => { av = i; win = i === 3 ? 'bass' : i === 2 ? 'low' : 'high'; sel = null; render(); };
         const m = h('button', { class: 'vmute', 'aria-label': (vs.mute ? 'Unmute ' : 'Mute ') + V.name, title: vs.mute ? 'Muted' : 'Playing' }, vs.mute ? '🔇' : '🔊');
         m.onclick = e => { e.stopPropagation(); vs.mute = !vs.mute; render(); };
         chips.append(h('div', { class: 'vwrap' }, b, m));
@@ -315,8 +316,7 @@
       const base = bar * PER, lo = winLo(), hi = winHi(), rows = []; for (let st = hi; st >= lo; st--) rows.push(st);
       const wrap = h('div', null);
       const out = inBar(bar).filter(n => { const st = MU.stepOf(n.n); return st < lo || st > hi; });
-      const ctl = h('div', { class: 'wrapx', style: { justifyContent: 'center' } },
-        h('button', { class: 'chip btnlike' + (win === 'high' ? ' on' : ''), onclick: () => { win = 'high'; render(); } }, '🔼 High (C4–C6)'), h('button', { class: 'chip btnlike' + (win === 'low' ? ' on' : ''), onclick: () => { win = 'low'; render(); } }, '🔽 Low (C3–C5)'));
+      const ctl = h('div', { class: 'wrapx', style: { justifyContent: 'center' } }, Object.keys(WINS).map(k => h('button', { class: 'chip btnlike' + (win === k ? ' on' : ''), onclick: () => { win = k; render(); } }, WINS[k][2])));
       if (out.length) ctl.append(h('span', { class: 'small muted' }, out.length + ' note' + (out.length > 1 ? 's' : '') + ' out of view'));
       wrap.append(ctl, beatHead());
       const grid = h('div', { class: 'mgrid', style: { gridTemplateColumns: COLS, gridTemplateRows: 'repeat(' + rows.length + ', 27px)' } });
@@ -342,7 +342,7 @@
     function staffView() {
       const g = 12, W = 330, x0 = 54, colW = (W - x0 - 8) / PER, base = bar * PER;
       const tTop = 24, tHi = HI + 3, tLo = 26, yT = st => tTop + (tHi - st) * g / 2;
-      const bTop = yT(tLo) + 14, bHi = 29, bLo = 15, yB = st => bTop + (bHi - st) * g / 2, H = yB(bLo) + 30;
+      const bTop = yT(tLo) + 14, bHi = 29, bLo = 5, yB = st => bTop + (bHi - st) * g / 2, H = yB(bLo) + 30;
       const svg = s('svg', { viewBox: '0 0 ' + W + ' ' + H, class: 'staffsvg', role: 'img', 'aria-label': 'Grand staff for bar ' + (bar + 1), style: { touchAction: 'manipulation' } });
       const tt = { y: yT, lines: [30, 32, 34, 36, 38], hi: tHi, lo: tLo }, bb = { y: yB, lines: [18, 20, 22, 24, 26], hi: bHi, lo: bLo };
       [tt, bb].forEach(S => { for (let c = 0; c < PER; c++) svg.append(s('rect', { x: x0 + c * colW, y: S.y(S.hi), width: colW, height: S.y(S.lo) - S.y(S.hi), fill: c % 2 === 0 ? 'rgba(107,79,216,.05)' : 'transparent', 'data-col': c, class: 'colbg' }));
@@ -371,6 +371,7 @@
           const grp = s('g', { style: { cursor: 'pointer' }, opacity: op });
           if (isSel) grp.append(s('circle', { cx, cy, r: 13, fill: 'rgba(245,184,61,.55)' }));
           for (let l = 28; l >= st && treble; l -= 2) grp.append(s('line', { x1: cx - 13, x2: cx + 13, y1: y(l), y2: y(l), stroke: '#2B1B4D', 'stroke-width': 1.4 }));
+          for (let l = 16; l >= st && !treble; l -= 2) grp.append(s('line', { x1: cx - 13, x2: cx + 13, y1: y(l), y2: y(l), stroke: '#2B1B4D', 'stroke-width': 1.4 }));
           for (let l = 40; l <= st && treble; l += 2) grp.append(s('line', { x1: cx - 13, x2: cx + 13, y1: y(l), y2: y(l), stroke: '#2B1B4D', 'stroke-width': 1.4 }));
           if (n.len > 1) grp.append(s('rect', { x: cx, y: cy - 3, width: Math.max(2, (n.len - .5) * colW - 4), height: 6, rx: 3, fill: col, opacity: .3 }));
           if (info.kind !== 'whole') {
@@ -434,7 +435,7 @@
         h('p', { class: 'small mt8 center' }, 'Length:'), lenChips(),
         chordSwap(),
         h('p', { class: 'small mt8 center' }, 'Voice:'), h('div', { class: 'wrapx', style: { justifyContent: 'center' } }, VOICES.map((vv, i) => h('button', { class: 'chip btnlike' + (sel.v === i ? ' on' : ''), style: sel.v === i ? { background: vv.c } : null, onclick: () => editVoice(i) }, vv.e + ' ' + vv.name))),
-        h('div', { class: 'wrapx mt12', style: { justifyContent: 'center' } }, h('button', { class: 'btn coral', onclick: editDelete }, '🗑 Delete note'), h('button', { class: 'btn mint', onclick: () => { sel = null; render(); } }, '✔ Done editing'))));
+        h('div', { class: 'wrapx mt12', style: { justifyContent: 'center' } }, h('button', { class: 'btn coral', onclick: editDelete }, '🗑 Delete note (Del)'), h('button', { class: 'btn mint', onclick: () => { sel = null; render(); } }, '✔ Done editing'))));
     }
 
     /* ----- input: lengths, chord stamps, keyboard ----- */
@@ -454,10 +455,10 @@
       if (!sel) inputBox.append(h('p', { class: 'small center mt12' }, h('b', null, 'New note length:')), lenChips());
       if (!sel) inputBox.append(chordRow());
       if (keysMode) {
-        const from = win === 'high' ? 'C4' : 'C3', to = win === 'high' ? 'C6' : 'C5';
+        const from = WINS[win][0], to = WINS[win][1];
         const kb = MU.keyboard({ from, to, labels: 'names', height: 120, inst: song.voices[av].inst, dur: .5, onPlay: keyPress }); kb.el.classList.add('hidesharp');
         inputBox.append(h('div', { class: 'wrapx mt12', style: { justifyContent: 'center' } },
-          h('button', { class: 'chip btnlike' + (win === 'low' ? ' on' : ''), onclick: () => { win = 'low'; render(); } }, '⬇ Lower keys'), h('button', { class: 'chip btnlike' + (win === 'high' ? ' on' : ''), onclick: () => { win = 'high'; render(); } }, '⬆ Higher keys'),
+          Object.keys(WINS).map(k => h('button', { class: 'chip btnlike' + (win === k ? ' on' : ''), onclick: () => { win = k; render(); } }, WINS[k][3] + ' (' + WINS[k][0] + '–' + WINS[k][1] + ')')),
           h('button', { class: 'chip btnlike' + (stack ? ' on' : ''), onclick: () => { stack = !stack; render(); } }, stack ? '🥞 Stacking ON' : '🥞 Stack notes')),
           h('div', { class: 'mt8' }, kb.el),
           h('div', { class: 'wrapx mt12', style: { justifyContent: 'center' } }, stack ? h('button', { class: 'btn mint', onclick: () => { advance(); render(); } }, 'Next ▶') : null, h('button', { class: 'btn ghost', onclick: () => { advance(); render(); } }, '⏸ Rest'), h('button', { class: 'btn ghost', onclick: back }, '⌫ Back'),
@@ -522,8 +523,14 @@
       if (cfg.drums) body.append(drumView());
       editPanel(); inputPanel(); helpers(); drawTools(); footer(); markNow();
     }
+    const onKey = e => {
+      const t = e.target, tag = t && t.tagName; if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || document.querySelector('.modal')) return;
+      if (e.key === 'Delete' && sel) { e.preventDefault(); editDelete(); }
+      else if (e.key === 'Escape' && sel) { sel = null; render(); }
+    };
+    document.addEventListener('keydown', onKey);
     render();
-    MU.onLeave(stop);
+    MU.onLeave(() => { stop(); document.removeEventListener('keydown', onKey); });
   };
 
   /* =====================================================================================================
