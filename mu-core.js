@@ -613,18 +613,29 @@
     const words = h('textarea', { class: 'inp', rows: 3, placeholder: 'What did you picture? What was your favourite part?' });
     const cv = h('canvas', { width: 600, height: 400 }); const ctx = cv.getContext('2d');
     ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, 600, 400); ctx.lineWidth = 5; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = '#2B1B4D';
-    let drawing = false, last = null;
+    let drawing = false, last = null, tool = 'pen', color = '#2B1B4D', penW = 5, eraseW = 26; const undoS = [];
+    const snapCv = () => { try { undoS.push(ctx.getImageData(0, 0, 600, 400)); if (undoS.length > 15) undoS.shift(); } catch (e) {} };
+    const applyTool = () => { ctx.strokeStyle = ctx.fillStyle = tool === 'eraser' ? '#fff' : color; ctx.lineWidth = tool === 'eraser' ? eraseW : penW; cv.style.cursor = tool === 'eraser' ? 'cell' : 'crosshair'; };
     const pos = e => { const r = cv.getBoundingClientRect(); return [(e.clientX - r.left) * 600 / r.width, (e.clientY - r.top) * 400 / r.height]; };
-    cv.addEventListener('pointerdown', e => { drawing = true; last = pos(e); cv.setPointerCapture(e.pointerId); ctx.beginPath(); ctx.arc(last[0], last[1], 2.5, 0, 7); ctx.fillStyle = ctx.strokeStyle; ctx.fill(); });
+    cv.addEventListener('pointerdown', e => { drawing = true; snapCv(); applyTool(); last = pos(e); cv.setPointerCapture(e.pointerId); ctx.beginPath(); ctx.arc(last[0], last[1], ctx.lineWidth / 2, 0, 7); ctx.fillStyle = ctx.strokeStyle; ctx.fill(); });
     cv.addEventListener('pointermove', e => { if (!drawing) return; const p = pos(e); ctx.beginPath(); ctx.moveTo(last[0], last[1]); ctx.lineTo(p[0], p[1]); ctx.stroke(); last = p; });
     const stop = () => { drawing = false; }; cv.addEventListener('pointerup', stop); cv.addEventListener('pointercancel', stop);
     const colors = ['#2B1B4D', '#F2645A', '#6B4FD8', '#12B58C', '#F5B83D', '#3A9BDC'];
     const sw = h('div', { class: 'swatches' });
-    colors.forEach((c, i) => sw.append(h('button', { class: i === 0 ? 'on' : '', style: { background: c }, 'aria-label': 'Colour ' + (i + 1), onclick: ev => { ctx.strokeStyle = c; sw.querySelectorAll('button').forEach(b => b.classList.remove('on')); ev.currentTarget.classList.add('on'); } })));
-    sw.append(h('button', { class: 'chip btnlike', style: { marginLeft: 'auto' }, onclick: () => { ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, 600, 400); } }, 'Clear'));
+    colors.forEach((c, i) => sw.append(h('button', { class: i === 0 ? 'on' : '', style: { background: c }, 'aria-label': 'Colour ' + (i + 1), onclick: ev => { color = c; tool = 'pen'; drawTools(); sw.querySelectorAll('button').forEach(b => b.classList.remove('on')); ev.currentTarget.classList.add('on'); } })));
+    sw.append(h('button', { class: 'chip btnlike', style: { marginLeft: 'auto' }, onclick: () => { snapCv(); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, 600, 400); applyTool(); } }, 'Clear'));
+    const tbar = h('div', { class: 'wrapx mt8' });
+    function drawTools() {
+      applyTool(); tbar.innerHTML = '';
+      tbar.append(h('button', { class: 'chip btnlike' + (tool === 'pen' ? ' on' : ''), onclick: () => { tool = 'pen'; drawTools(); } }, '✏️ Pen'), h('button', { class: 'chip btnlike' + (tool === 'eraser' ? ' on' : ''), onclick: () => { tool = 'eraser'; drawTools(); } }, '🧽 Eraser'));
+      const sizes = tool === 'eraser' ? [['Small', 12], ['Medium', 26], ['Big', 52]] : [['Thin', 3], ['Medium', 5], ['Thick', 12]], cur = tool === 'eraser' ? eraseW : penW;
+      sizes.forEach(([n, w]) => tbar.append(h('button', { class: 'chip btnlike' + (cur === w ? ' on' : ''), onclick: () => { if (tool === 'eraser') eraseW = w; else penW = w; drawTools(); } }, n)));
+      tbar.append(h('button', { class: 'chip btnlike', onclick: () => { const d = undoS.pop(); if (!d) return MU.toast('Nothing to undo'); ctx.putImageData(d, 0, 0); applyTool(); } }, '↩ Undo'));
+    }
+    drawTools();
     wrap.append(h('div', { class: 'card' }, h('label', { class: 'lbl' }, 'What did you listen to?'), sel, other,
       h('label', { class: 'lbl' }, '1. What did you notice?'), nbox, h('label', { class: 'lbl' }, '2. How did it feel?'), mbox,
-      h('label', { class: 'lbl' }, '3. Draw the music (shapes, colours, a picture, anything)'), sw, cv, h('label', { class: 'lbl' }, '4. In your own words'), words,
+      h('label', { class: 'lbl' }, '3. Draw the music (shapes, colours, a picture, anything)'), sw, tbar, cv, h('label', { class: 'lbl' }, '4. In your own words'), words,
       h('button', { class: 'btn big mint wide mt16', onclick: () => {
         const pc = pcs.find(p => p.id === sel.value);
         const note = { id: 'n' + Date.now(), ts: Date.now(), piece: sel.value || null, title: pc ? pc.title : (other.value.trim() || 'My page'), noticed: Array.from(picked), mood, words: words.value.trim(), img: cv.toDataURL('image/jpeg', 0.6) };
