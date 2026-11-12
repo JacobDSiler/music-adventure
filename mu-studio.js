@@ -185,6 +185,19 @@
       bar = Math.floor(cursor / PER); sel = null; render();
     }
 
+    /* ----- sing it: microphone to notes ----- */
+    function voiceDialog() {
+      if (!MU.voiceDialog) return MU.toast('The singing tool is still loading');
+      stop(); const startBar = bar;
+      MU.voiceDialog({ tempo: song.tempo, bars: song.bars - startBar, startBar, voiceName: VOICES[av].name, voiceColor: VOICES[av].c, inst: song.voices[av].inst, lvl,
+        onApply: (list, sb, nb) => {
+          snap(); const a = sb * PER, e = (sb + nb) * PER, v = av;
+          song.notes = song.notes.filter(n => !(n.v === v && n.s >= a && n.s < e));
+          list.forEach(n => song.notes.push({ s: a + n.s, n: n.n, len: n.len, v }));
+          if (list.length) { const ms = list.map(n => MU.midi(n.n)).sort((x, y) => x - y), med = ms[Math.floor(ms.length / 2)]; win = med >= 60 ? 'high' : med >= 48 ? 'low' : med >= 36 ? 'bass' : 'deep'; }
+          sel = null; bar = sb; cursor = Math.min(total(), a + (list.length ? list[list.length - 1].s + list[list.length - 1].len : 0)); render(); MU.toast('Added ' + list.length + ' notes! Press play, then look at them in Blocks or Staff.');
+        } });
+    }
     /* ----- helpers: harmony line, auto chords ----- */
     const HARM = [['3rd below', -2], ['3rd above', 2], ['5th below', -4], ['6th below', -5], ['Octave above', 7]];
     function harmonize(delta) {
@@ -233,7 +246,7 @@
       [['block', '▦ Blocks'], ['staff', '🎼 Staff']].forEach(([k, t]) => viewBtns.append(h('button', { class: 'chip btnlike' + (view === k ? ' on' : ''), onclick: () => { view = k; drawViewBtns(); render(); } }, t)));
       viewBtns.append(h('button', { class: 'chip btnlike' + (showNames ? ' on' : ''), onclick: () => { showNames = !showNames; drawViewBtns(); render(); } }, 'ABC names'));
     }
-    transport.append(h('div', { class: 'row', style: { justifyContent: 'center', gap: '10px', flexWrap: 'wrap' } }, playBtn, loopBtn),
+    transport.append(h('div', { class: 'row', style: { justifyContent: 'center', gap: '10px', flexWrap: 'wrap' } }, playBtn, loopBtn, h('button', { class: 'btn coral', onclick: voiceDialog }, '🎤 Sing it')),
       h('div', { class: 'row mt8' }, h('span', null, '🐢'), tempo, h('span', null, '🐇')), h('div', { class: 'center small' }, tempoLbl), h('div', { class: 'mt8' }, viewBtns));
     drawViewBtns();
 
